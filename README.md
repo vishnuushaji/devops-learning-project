@@ -7,7 +7,7 @@ using only free tools.
 
 - [x] **Phase 1: App + tests** (Flask, pytest, venv)
 - [x] **Phase 2: Containerize** (Docker)
-- [ ] Phase 3: CI/CD (Git + GitHub Actions)
+- [x] **Phase 3: CI/CD** (Git + GitHub Actions)
 - [ ] Phase 4: Kubernetes + Helm (kind)
 - [ ] Phase 5: Monitoring (Prometheus + Grafana)
 - [ ] Phase 6: Security scanning + GitOps (Trivy, Argo CD)
@@ -37,3 +37,15 @@ docker stop demo-app; docker rm demo-app
 
 Key ideas: image vs. container, layer caching (dependencies copied before code),
 non-root user, slim base image, production server (gunicorn), HEALTHCHECK.
+
+## CI/CD (Phase 3)
+
+`.github/workflows/ci.yml` runs on every push/PR to `main`:
+
+1. **Test**: install deps, run pytest.
+2. **Build & push image** (only if tests pass): build the Docker image and push it
+   to GitHub Container Registry as `ghcr.io/vishnuushaji/devops-learning-project`
+   (tags: `latest` and the short commit SHA). Pull requests build but do not push.
+
+Key ideas: triggers, jobs and `needs`, least-privilege `permissions`, the built-in
+`GITHUB_TOKEN` (no stored passwords), dependency and Docker layer caching.
