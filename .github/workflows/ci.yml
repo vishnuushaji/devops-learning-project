@@ -1,0 +1,93 @@
+name: CI/CD
+
+# TRIGGERS: run on every push to main, and on every pull request targeting main.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Least privilege: by default the pipeline may only READ the repo.
+# (The build job below asks for extra permission, only where it is needed.)
+permissions:
+  contents: read
+
+# If you push twice quickly, cancel the older run instead of wasting minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Registry + image name, e.g. ghcr.io/<your-username>/<repo>
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ---------------------------------------------------------------- CI
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app   # our code lives in /app, not the repo root
+    steps:
+      # Each job starts on an EMPTY machine, so first download our code.
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"          # same version as our Dockerfile
+          cache: pip                      # reuse downloaded packages between runs
+          cache-dependency-path: app/requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest -v
+
+  # ---------------------------------------------------------------- CD
+  build:
+    name: Build & push image
+    needs: test                 # only runs if tests passed
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write           # allow pushing to GitHub Container Registry
+    steps:
+      - uses: actions/checkout@v4
+
+      # Buildx = Docker's modern builder; enables the layer cache used below.
+      - uses: docker/setup-buildx-action@v3
+
+      # Log in to GHCR with the auto-generated token. Skipped for pull requests,
+      # because we only PUBLISH images from main.
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Computes image tags for us: "latest" on main, plus the git commit SHA.
+      # (It also lowercases the name, which registries require.)
+      - name: Compute image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short
+
+      - name: Build (and push, unless this is a PR)
+        uses: docker/build-push-action@v6
+        with:
+          context: app
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Store Docker layers in GitHub's cache so later builds are fast.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
