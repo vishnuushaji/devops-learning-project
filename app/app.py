@@ -25,7 +25,7 @@ def index():
 @app.route("/health")
 def health():
     # Health endpoint: orchestrators poll this to know the app is alive.
-    return jsonify(status="healthy"), 200
+    return jsonify(status="ok"), 200
 
 
 if __name__ == "__main__":
